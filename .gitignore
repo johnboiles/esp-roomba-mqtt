@@ -1,0 +1,6 @@
+.DS_Store
+.pioenvs
+.piolibdeps
+.clang_complete
+.gcc-flags.json
+src/secrets.h

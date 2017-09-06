@@ -1,0 +1,11 @@
+Roomba/Makefile
+Roomba/MANIFEST
+Roomba/project.cfg
+Roomba/doc/*
+Roomba/Roomba.h
+Roomba/Roomba.cpp
+Roomba/LICENSE
+Roomba/MANIFEST
+Roomba/examples/TestSuite/TestSuite.pde
+Roomba/examples/RoombaTest1/RoombaTest1.pde
+Roomba/examples/RoombaRCRx/RoombaRCRx.pde
