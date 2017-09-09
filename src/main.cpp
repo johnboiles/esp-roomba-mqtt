@@ -136,7 +136,7 @@ void debugCallback() {
 
 void setup() {
   pinMode(BRC_PIN, OUTPUT);
-  digitalWrite(BRC_PIN, LOW);
+  digitalWrite(BRC_PIN, HIGH);
 
   // Set Hostname.
   String hostname(HOSTNAME);
