@@ -32,6 +32,13 @@ const PROGMEM char *commandTopic = MQTT_COMMAND_TOPIC;
 const PROGMEM char *statusTopic = MQTT_STATE_TOPIC;
 
 os_timer_t wakeupTimer;
+
+void doneWakeup(void *pArg) {
+  digitalWrite(BRC_PIN, HIGH);
+  roomba.start();
+  DLOG("Done waking up\n");
+}
+
 void wakeup(){
   // TODO: There's got to be some black magic here that I'm missing to keep the
   // Roomba from going into deep sleep while on the dock. Thinking Cleaner
@@ -44,15 +51,15 @@ void wakeup(){
   // * Switching on a motor or led very very briefly?
   // * Changing the baud rate
   // * Setting BRC to input (high impedence) instead of high
+  // I have noticed sometimes I'll get a sensor packet while the BRC pin is
+  // pulsed low but this is super unreliable.
   DLOG("Wakeup Roomba\n");
   digitalWrite(BRC_PIN, LOW);
   // Spin up a timer to bring the BRC_PIN back high again
   os_timer_disarm(&wakeupTimer);
-  os_timer_setfn(&wakeupTimer, [](void *pArg) {
-    digitalWrite(BRC_PIN, HIGH);
-    roomba.start();
-    DLOG("Done waking up\n");
-  }, NULL);
+  // I tried to use a c++ lambda here, but for some reason it'd fail on the 6th
+  // iteration. I wonder if something is keyed off the function pointer.
+  os_timer_setfn(&wakeupTimer, doneWakeup, NULL);
   os_timer_arm(&wakeupTimer, 1000, false);
  }
 
