@@ -128,7 +128,7 @@ void debugCallback() {
     mqttClient.publish("vacuum/hello", "hello there");
   } else if (cmd == "version") {
     const char compile_date[] = __DATE__ " " __TIME__;
-    DLOG("Version: %s (%s)\n", GIT_REVISION, compile_date);
+    DLOG("Compiled on: %s\n", compile_date);
   } else {
     DLOG("Unknown command %s\n", cmd.c_str());
   }
