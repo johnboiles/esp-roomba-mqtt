@@ -204,23 +204,27 @@ void sendStatus() {
 
   DLOG("Got sensor values Distance:%dmm ChargingState:%d Voltage:%dmV Current:%dmA Charge:%dmAh Capacity:%dmAh\n", distance, chargingState, voltage, current, charge, capacity);
 
+  bool cleaning = false;
+  bool docked = false;
+
   String state;
   if (current < -300) {
-    state = "cleaning";
+    cleaning = true;
   } else if (current > -50) {
-    state = "docked";
-  } else {
-    state = "stopped";
+    docked = true;
   }
 
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& root = jsonBuffer.createObject();
   root["battery_level"] = (charge * 100)/capacity;
-  root["state"] = state;
+  root["cleaning"] = cleaning;
+  root["docked"] = docked;
   root["charging"] = chargingState == Roomba::ChargeStateReconditioningCharging
   || chargingState == Roomba::ChargeStateFullChanrging
   || chargingState == Roomba::ChargeStateTrickleCharging;
-
+  root["voltage"] = voltage;
+  root["current"] = current;
+  root["charge"] = charge;
   String jsonStr;
   root.printTo(jsonStr);
   mqttClient.publish(statusTopic, jsonStr.c_str());
