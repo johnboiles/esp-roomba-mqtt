@@ -121,7 +121,7 @@ void debugCallback() {
   } else if (cmd == "quit") {
     DLOG("Stopping Roomba\n");
     Serial.write(173);
-  } else if (cmd == "rreset") {
+  } else if (cmd == "reset") {
     DLOG("Resetting Roomba\n");
     roomba.reset();
   } else if (cmd == "mqtthello") {
