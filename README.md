@@ -19,10 +19,9 @@ ESP8266 MQTT Roomba controller (Useful for hooking up old Roombas to Home Assist
 * ESP GPIO15 -> 10kOhm Resistor -> GND
 * ESP GPIO0 -> 10kOhm Resistor -> 3.3V
 * ESP EN -> 10kOhm Resistor -> 3.3V
-* ESP RST -> 10kOhm Resistor -> 3.3V
 * ESP TX -> Roomba RX (Pin3 on Roomba's Mini Din connector)
 * Roomba TX (Pin4 on Roomba) -> 5kOhm -> ESP RX -> 10kOhm -> GND
-* ESP GPIO15 -> Roomba BRC (Pin5 on Roomba)
+* ESP GPIO14 -> Roomba BRC (Pin5 on Roomba)
 * ESP 3.3V -> Voltage regulator 3.3V
 * ESP GND -> Voltage regulator GND
 * Voltage regulator Vin -> Roomba Vpwr (Pin 1 or 2 on Roomba)
