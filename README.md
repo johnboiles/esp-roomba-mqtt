@@ -12,7 +12,7 @@ ESP8266 MQTT Roomba controller (Useful for hooking up old Roombas to Home Assist
 
 ## Electronics
 
-[Diagram coming soon]
+![esp-roomba-mqtt schematic](doc/schematic.png)
 
 ### Connections
 
