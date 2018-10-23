@@ -207,7 +207,6 @@ void sendStatus() {
   bool cleaning = false;
   bool docked = false;
 
-  String state;
   if (current < -300) {
     cleaning = true;
   } else if (current > -50) {
