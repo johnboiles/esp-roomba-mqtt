@@ -220,7 +220,7 @@ void sendStatus() {
   root["cleaning"] = cleaning;
   root["docked"] = docked;
   root["charging"] = chargingState == Roomba::ChargeStateReconditioningCharging
-  || chargingState == Roomba::ChargeStateFullChanrging
+  || chargingState == Roomba::ChargeStateFullCharging
   || chargingState == Roomba::ChargeStateTrickleCharging;
   root["voltage"] = voltage;
   root["current"] = current;

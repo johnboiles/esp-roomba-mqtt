@@ -317,7 +317,7 @@ public:
     {
 	ChargeStateNotCharging            = 0,
 	ChargeStateReconditioningCharging = 1,
-	ChargeStateFullChanrging          = 2,
+	ChargeStateFullCharging           = 2,
 	ChargeStateTrickleCharging        = 3,
 	ChargeStateWaiting                = 4,
 	ChargeStateFault                  = 5,
