@@ -1,4 +1,5 @@
 # esp-roomba-mqtt
+![TravisCI Build Status](https://travis-ci.org/johnboiles/esp-roomba-mqtt.svg?branch=master)
 
 ESP8266 MQTT Roomba controller (Useful for hooking up old Roombas to Home Assistant)
 
