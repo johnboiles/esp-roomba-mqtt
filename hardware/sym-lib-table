@@ -1,0 +1,3 @@
+(sym_lib_table
+  (lib (name mylib)(type Legacy)(uri F:/mygit/KiCAD/libraries/mylib.lib)(options "")(descr ""))
+)
