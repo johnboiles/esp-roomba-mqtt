@@ -139,14 +139,65 @@ void debugCallback() {
     DLOG("Setting baud to 19200\n");
     roomba.baud(Roomba::Baud19200);
     delay(100);
+  } else if (cmd == "sleep5") {
+    DLOG("Going to sleep for 5 seconds\n");
+    delay(100);
+    ESP.deepSleep(5e6);
   } else {
     DLOG("Unknown command %s\n", cmd.c_str());
   }
 }
 
+float readADC(int samples) {
+  // Basic code to read from the ADC
+  int adc = 0;
+  for (int i = 0; i < samples; i++) {
+    delay(1);
+    adc += analogRead(A0);
+  }
+  adc = adc / samples;
+  float mV = adc * ADC_VOLTAGE_DIVIDER;
+  DLOG("ADC for %d is %.1fmV with %d samples\n", adc, mV, samples);
+  return mV;
+}
+
+void sleepIfNecessary() {
+#ifdef ENABLE_ADC_SLEEP
+  // Check the battery, if it's too low, sleep the ESP (so we don't murder the battery)
+  float mV = readADC(10);
+  // According to this post, you want to stop using NiMH batteries at about 0.9V per cell
+  // https://electronics.stackexchange.com/a/35879 For a 12 cell battery like is in the Roomba,
+  // That's 10.8 volts.
+  if (mV < 10800) {
+    // Fire off a quick message with our most recent state, if MQTT is connected
+    DLOG("Battery voltage is low (%.1fV). Sleeping for 10 minutes\n", mV / 1000);
+    if (mqttClient.connected()) {
+      StaticJsonBuffer<200> jsonBuffer;
+      JsonObject& root = jsonBuffer.createObject();
+      root["battery_level"] = 0;
+      root["cleaning"] = false;
+      root["docked"] = false;
+      root["charging"] = false;
+      root["voltage"] = mV / 1000;
+      root["charge"] = 0;
+      String jsonStr;
+      root.printTo(jsonStr);
+      mqttClient.publish(statusTopic, jsonStr.c_str(), true);
+    }
+    delay(200);
+
+    // Sleep for 10 minutes
+    ESP.deepSleep(600e6);
+  }
+#endif
+}
+
 void setup() {
   // High-impedence on the BRC_PIN
   pinMode(BRC_PIN,INPUT);
+
+  // Sleep immediately if ENABLE_ADC_SLEEP and the battery is low
+  sleepIfNecessary();
 
   // Set Hostname.
   String hostname(HOSTNAME);
@@ -260,6 +311,7 @@ void loop() {
     if (now - lastStateMsgTime > 10000) {
       lastStateMsgTime = now;
       sendStatus();
+      sleepIfNecessary();
     }
   }
 
