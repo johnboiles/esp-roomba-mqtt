@@ -131,6 +131,14 @@ void debugCallback() {
   } else if (cmd == "version") {
     const char compile_date[] = __DATE__ " " __TIME__;
     DLOG("Compiled on: %s\n", compile_date);
+  } else if (cmd == "baud115200") {
+    DLOG("Setting baud to 115200\n");
+    roomba.baud(Roomba::Baud115200);
+    delay(100);
+  } else if (cmd == "baud19200") {
+    DLOG("Setting baud to 19200\n");
+    roomba.baud(Roomba::Baud19200);
+    delay(100);
   } else {
     DLOG("Unknown command %s\n", cmd.c_str());
   }
