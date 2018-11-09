@@ -185,6 +185,7 @@ void Roomba::playSong(uint8_t songNumber)
 void Roomba::stream(const uint8_t* packetIDs, int len)
 {
   _serial->write(148);
+  _serial->write((uint8_t)len);
   _serial->write(packetIDs, len);
 }
 

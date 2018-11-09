@@ -58,6 +58,7 @@ uint8_t sensors[] = {
 
 // Network setup
 WiFiClient wifiClient;
+bool OTAStarted;
 
 // MQTT setup
 PubSubClient mqttClient(wifiClient);
@@ -215,6 +216,9 @@ void debugCallback() {
   } else if (cmd == "stream") {
     DLOG("Requesting stream\n");
     roomba.stream(sensors, sizeof(sensors));
+  } else if (cmd == "streamreset") {
+    DLOG("Resetting stream\n");
+    roomba.stream({}, 0);
   } else {
     DLOG("Unknown command %s\n", cmd.c_str());
   }
@@ -256,6 +260,15 @@ bool parseRoombaStateFromStreamPacket(uint8_t *packet, int length, RoombaState *
   int i = 0;
   while (i < length) {
     switch(packet[i]) {
+      case Roomba::Sensors7to26: // 0
+        i += 27;
+        break;
+      case Roomba::Sensors7to16: // 1
+        i += 11;
+        break;
+      case Roomba::SensorVirtualWall: // 13
+        i += 2;
+        break;
       case Roomba::SensorDistance: // 19
         state->distance = packet[i+1] * 256 + packet[i+2];
         i += 3;
@@ -294,12 +307,21 @@ bool parseRoombaStateFromStreamPacket(uint8_t *packet, int length, RoombaState *
   }
 }
 
+void verboseLogPacket(uint8_t *packet, uint8_t length) {
+    VLOG("Packet: ");
+    for (int i = 0; i < length; i++) {
+      VLOG("%d ", packet[i]);
+    }
+    VLOG("\n");
+}
+
 void readSensorPacket() {
   uint8_t packetLength;
   bool received = roomba.pollSensors(roombaPacket, sizeof(roombaPacket), &packetLength);
   if (received) {
     RoombaState rs;
     bool parsed = parseRoombaStateFromStreamPacket(roombaPacket, packetLength, &rs);
+    verboseLogPacket(roombaPacket, packetLength);
     if (parsed) {
       roombaState = rs;
       VLOG("Got Packet of len=%d! Distance:%dmm ChargingState:%d Voltage:%dmV Current:%dmA Charge:%dmAh Capacity:%dmAh\n", packetLength, roombaState.distance, roombaState.chargingState, roombaState.voltage, roombaState.current, roombaState.charge, roombaState.capacity);
@@ -315,66 +337,6 @@ void readSensorPacket() {
     }
   }
 }
-
-int packetIndex;
-int packetNumberOfBytes;
-
-void readSensorPacket2() {
-  char in;
-  if (Serial.available()) {
-	  in = Serial.read();
-    VLOG("%d ", in);
-  } else {
-    return;
-  }
-
-  // Wait for the start byte
-  if (packetIndex == 0 && in != 19) {
-    return;
-  }
-
-  roombaPacket[packetIndex] = in;
-  packetIndex++;
-
-  if (packetIndex == 2) {
-    // Record packet length
-    packetNumberOfBytes = in;
-  } else if (packetIndex >= packetNumberOfBytes + 3) {
-    // Calculate checksum
-    uint8_t checksum = 0;
-    VLOG("\nSERIAL DATA: ");
-    for (int i = 0; i < packetIndex; i++) {
-      checksum += roombaPacket[i];
-      VLOG("%d ", roombaPacket[i]);
-    }
-    VLOG("\n");
-    if (checksum == 0) {
-      VLOG("Got packet with valid checksum\n");
-      uint8_t *packet = &(roombaPacket[2]);
-      RoombaState rs;
-      bool parsed = parseRoombaStateFromStreamPacket(packet, roombaPacket[1], &rs);
-      if (parsed) {
-        roombaState = rs;
-        VLOG("Got Packet! Distance:%dmm ChargingState:%d Voltage:%dmV Current:%dmA Charge:%dmAh Capacity:%dmAh\n", roombaState.distance, roombaState.chargingState, roombaState.voltage, roombaState.current, roombaState.charge, roombaState.capacity);
-        roombaState.cleaning = false;
-        roombaState.docked = false;
-        if (roombaState.current < -400) {
-          roombaState.cleaning = true;
-        } else if (roombaState.current > -50) {
-          roombaState.docked = true;
-        }
-      } else {
-        VLOG("Failed to parse packet\n");
-      }
-    } else {
-      VLOG("Got packet without valid checksum\n");
-    }
-    packetIndex = 0;
-  }
-}
-
-
-bool OTAStarted;
 
 void onOTAStart() {
   DLOG("Starting OTA session\n");
@@ -414,6 +376,14 @@ void setup() {
   #endif
 
   roomba.start();
+  delay(100);
+
+  // Reset stream sensor values
+  roomba.stream({}, 0);
+  delay(100);
+
+  // Request sensor stream
+  roomba.stream(sensors, sizeof(sensors));
 }
 
 void reconnect() {
@@ -488,15 +458,10 @@ void loop() {
   // Report the status over mqtt at fixed intervals
   if (now - lastStateMsgTime > 10000) {
     lastStateMsgTime = now;
-    if (now - roombaState.timestamp > 120000) {
-      DLOG("Requesting sensor stream\n");
-      roomba.stream(sensors, sizeof(sensors));
-      delay(100);
-      roomba.streamCommand(Roomba::StreamCommandResume);
-    } else if (now - roombaState.timestamp > 30000 || roombaState.sent) {
+    if (now - roombaState.timestamp > 30000 || roombaState.sent) {
       DLOG("Roomba state already sent (%.1fs old)\n", (now - roombaState.timestamp)/1000.0);
-      DLOG("Resume streaming\n");
-      roomba.streamCommand(Roomba::StreamCommandResume);
+      DLOG("Request stream\n");
+      roomba.stream(sensors, sizeof(sensors));
     } else {
       sendStatus();
       roombaState.sent = true;
