@@ -15,6 +15,7 @@ extern "C" {
 #if LOGGING
 #include <RemoteDebug.h>
 #define DLOG(msg, ...) if(Debug.isActive(Debug.DEBUG)){Debug.printf(msg, ##__VA_ARGS__);}
+#define VLOG(msg, ...) if(Debug.isActive(Debug.VERBOSE)){Debug.printf(msg, ##__VA_ARGS__);}
 RemoteDebug Debug;
 #else
 #define DLOG(msg, ...)
@@ -24,8 +25,36 @@ RemoteDebug Debug;
 Roomba roomba(&Serial, Roomba::Baud115200);
 
 // Roomba state
-bool cleaning = false;
-bool docked = false;
+typedef struct {
+  // Sensor values
+  int16_t distance;
+  uint8_t chargingState;
+  uint16_t voltage;
+  int16_t current;
+  // Supposedly unsigned, but I've seen it get to crazy values
+  uint16_t charge;
+  uint16_t capacity;
+
+  // Derived state
+  bool cleaning;
+  bool docked;
+
+  int timestamp;
+  bool sent;
+} RoombaState;
+
+RoombaState roombaState;
+
+// Roomba sensor packet
+uint8_t roombaPacket[100];
+uint8_t sensors[] = {
+  Roomba::SensorDistance, // PID 19, 2 bytes, mm, signed
+  Roomba::SensorChargingState, // PID 21, 1 byte
+  Roomba::SensorVoltage, // PID 22, 2 bytes, mV, unsigned
+  Roomba::SensorCurrent, // PID 23, 2 bytes, mA, signed
+  Roomba::SensorBatteryCharge, // PID 25, 2 bytes, mAh, unsigned
+  Roomba::SensorBatteryCapacity // PID 26, 2 bytes, mAh, unsigned
+};
 
 // Network setup
 WiFiClient wifiClient;
@@ -35,14 +64,19 @@ PubSubClient mqttClient(wifiClient);
 const PROGMEM char *commandTopic = MQTT_COMMAND_TOPIC;
 const PROGMEM char *statusTopic = MQTT_STATE_TOPIC;
 
-void wakeOnDock(void) {
-  DLOG("Wakeup Roomba on dock\n");
+void wakeup() {
+  DLOG("Wakeup Roomba\n");
   pinMode(BRC_PIN,OUTPUT);
   digitalWrite(BRC_PIN,LOW);
   delay(200);
   pinMode(BRC_PIN,INPUT);
   delay(200);
   Serial.write(128); // Start
+}
+
+void wakeOnDock() {
+  DLOG("Wakeup Roomba on dock\n");
+  wakeup();
 #ifdef ROOMBA_650_SLEEP_FIX
   // Some black magic from @AndiTheBest to keep the Roomba awake on the dock
   // See https://github.com/johnboiles/esp-roomba-mqtt/issues/3#issuecomment-402096638
@@ -53,7 +87,7 @@ void wakeOnDock(void) {
 #endif
 }
 
-void wakeOffDock(void) {
+void wakeOffDock() {
   DLOG("Wakeup Roomba off Dock\n");
   Serial.write(131); // Safe mode
   delay(300);
@@ -61,6 +95,8 @@ void wakeOffDock(void) {
 }
 
 bool performCommand(const char *cmdchar) {
+  wakeup();
+
   // Char* string comparisons dont always work
   String cmd(cmdchar);
 
@@ -68,16 +104,16 @@ bool performCommand(const char *cmdchar) {
   if (cmd == "turn_on") {
     DLOG("Turning on\n");
     roomba.cover();
-    cleaning = true;
+    roombaState.cleaning = true;
   } else if (cmd == "turn_off") {
     DLOG("Turning off\n");
     roomba.power();
-    cleaning = false;
-  } else if (cmd == "toggle") {
+    roombaState.cleaning = false;
+  } else if (cmd == "toggle" || cmd == "start_pause") {
     DLOG("Toggling\n");
     roomba.cover();
   } else if (cmd == "stop") {
-    if (cleaning) {
+    if (roombaState.cleaning) {
       DLOG("Stopping\n");
       roomba.cover();
     } else {
@@ -85,14 +121,14 @@ bool performCommand(const char *cmdchar) {
     }
   } else if (cmd == "clean_spot") {
     DLOG("Cleaning Spot\n");
-    cleaning = true;
+    roombaState.cleaning = true;
     roomba.spot();
   } else if (cmd == "locate") {
     DLOG("Locating\n");
     // TODO
   } else if (cmd == "return_to_base") {
     DLOG("Returning to Base\n");
-    cleaning = true;
+    roombaState.cleaning = true;
     roomba.dock();
   } else {
     return false;
@@ -115,6 +151,19 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   }
 }
 
+float readADC(int samples) {
+  // Basic code to read from the ADC
+  int adc = 0;
+  for (int i = 0; i < samples; i++) {
+    delay(1);
+    adc += analogRead(A0);
+  }
+  adc = adc / samples;
+  float mV = adc * ADC_VOLTAGE_DIVIDER;
+  VLOG("ADC for %d is %.1fmV with %d samples\n", adc, mV, samples);
+  return mV;
+}
+
 void debugCallback() {
   String cmd = Debug.getLastCommand();
 
@@ -133,32 +182,42 @@ void debugCallback() {
     DLOG("Compiled on: %s\n", compile_date);
   } else if (cmd == "baud115200") {
     DLOG("Setting baud to 115200\n");
-    roomba.baud(Roomba::Baud115200);
+    Serial.begin(115200);
     delay(100);
   } else if (cmd == "baud19200") {
     DLOG("Setting baud to 19200\n");
-    roomba.baud(Roomba::Baud19200);
+    Serial.begin(19200);
+    delay(100);
+  } else if (cmd == "baud57600") {
+    DLOG("Setting baud to 57600\n");
+    Serial.begin(57600);
+    delay(100);
+  } else if (cmd == "baud38400") {
+    DLOG("Setting baud to 38400\n");
+    Serial.begin(38400);
     delay(100);
   } else if (cmd == "sleep5") {
     DLOG("Going to sleep for 5 seconds\n");
     delay(100);
     ESP.deepSleep(5e6);
+  } else if (cmd == "wake") {
+    DLOG("Toggle BRC pin\n");
+    wakeup();
+  } else if (cmd == "readadc") {
+    float adc = readADC(10);
+    DLOG("ADC voltage is %.1fmV\n", adc);
+  } else if (cmd == "streamresume") {
+    DLOG("Resume streaming\n");
+    roomba.streamCommand(Roomba::StreamCommandResume);
+  } else if (cmd == "streampause") {
+    DLOG("Pause streaming\n");
+    roomba.streamCommand(Roomba::StreamCommandPause);
+  } else if (cmd == "stream") {
+    DLOG("Requesting stream\n");
+    roomba.stream(sensors, sizeof(sensors));
   } else {
     DLOG("Unknown command %s\n", cmd.c_str());
   }
-}
-
-float readADC(int samples) {
-  // Basic code to read from the ADC
-  int adc = 0;
-  for (int i = 0; i < samples; i++) {
-    delay(1);
-    adc += analogRead(A0);
-  }
-  adc = adc / samples;
-  float mV = adc * ADC_VOLTAGE_DIVIDER;
-  DLOG("ADC for %d is %.1fmV with %d samples\n", adc, mV, samples);
-  return mV;
 }
 
 void sleepIfNecessary() {
@@ -192,6 +251,80 @@ void sleepIfNecessary() {
 #endif
 }
 
+bool parseRoombaStateFromStreamPacket(uint8_t *packet, int length, RoombaState *state) {
+  state->timestamp = millis();
+  int i = 0;
+  while (i < length) {
+    switch(packet[i]) {
+      case Roomba::SensorDistance: // 19
+        state->distance = packet[i+1] * 256 + packet[i+2];
+        i += 3;
+        break;
+      case Roomba::SensorChargingState: // 21
+        state->chargingState = packet[i+1];
+        i += 2;
+        break;
+      case Roomba::SensorVoltage: // 22
+        state->voltage = packet[i+1] * 256 + packet[i+2];
+        i += 3;
+        break;
+      case Roomba::SensorCurrent: // 23
+        state->current = packet[i+1] * 256 + packet[i+2];
+        i += 3;
+        break;
+      case Roomba::SensorBatteryCharge: // 25
+        state->charge = packet[i+1] * 256 + packet[i+2];
+        i += 3;
+        break;
+      case Roomba::SensorBatteryCapacity: //26
+        state->capacity = packet[i+1] * 256 + packet[i+2];
+        i += 3;
+        break;
+      case Roomba::SensorBumpsAndWheelDrops: // 7
+        i += 2;
+        break;
+      case 128: // Unknown
+        i += 2;
+        break;
+      default:
+        VLOG("Unhandled Packet ID %d\n", packet[i]);
+        return false;
+        break;
+    }
+  }
+}
+
+void readSensorPacket() {
+  uint8_t packetLength;
+  bool received = roomba.pollSensors(roombaPacket, sizeof(roombaPacket), &packetLength);
+  if (received) {
+    RoombaState rs;
+    bool parsed = parseRoombaStateFromStreamPacket(roombaPacket, packetLength, &rs);
+    if (parsed) {
+      roombaState = rs;
+      VLOG("Got Packet! Distance:%dmm ChargingState:%d Voltage:%dmV Current:%dmA Charge:%dmAh Capacity:%dmAh\n", roombaState.distance, roombaState.chargingState, roombaState.voltage, roombaState.current, roombaState.charge, roombaState.capacity);
+      roombaState.cleaning = false;
+      roombaState.docked = false;
+      if (roombaState.current < -400) {
+        roombaState.cleaning = true;
+      } else if (roombaState.current > -50) {
+        roombaState.docked = true;
+      }
+    } else {
+      VLOG("Failed to parse packet\n");
+    }
+  }
+}
+
+bool OTAStarted;
+
+void onOTAStart() {
+  DLOG("Starting OTA session\n");
+  DLOG("Pause streaming\n");
+  roomba.streamCommand(Roomba::StreamCommandPause);
+  OTAStarted = true;
+}
+
 void setup() {
   // High-impedence on the BRC_PIN
   pinMode(BRC_PIN,INPUT);
@@ -210,6 +343,7 @@ void setup() {
 
   ArduinoOTA.setHostname((const char *)hostname.c_str());
   ArduinoOTA.begin();
+  ArduinoOTA.onStart(onOTAStart);
 
   mqttClient.setServer(MQTT_SERVER, 1883);
   mqttClient.setCallback(mqttCallback);
@@ -236,54 +370,22 @@ void reconnect() {
 }
 
 void sendStatus() {
-  // Flush serial buffers
-  while (Serial.available()) {
-    Serial.read();
-  }
-
-  uint8_t sensors[] = {
-    Roomba::SensorDistance, // 2 bytes, mm, signed
-    Roomba::SensorChargingState, // 1 byte
-    Roomba::SensorVoltage, // 2 bytes, mV, unsigned
-    Roomba::SensorCurrent, // 2 bytes, mA, signed
-    Roomba::SensorBatteryCharge, // 2 bytes, mAh, unsigned
-    Roomba::SensorBatteryCapacity // 2 bytes, mAh, unsigned
-  };
-  uint8_t values[11];
-
-  bool success = roomba.getSensorsList(sensors, sizeof(sensors), values, 11);
-  if (!success) {
-    DLOG("Failed to read sensor values from Roomba\n");
+  if (!mqttClient.connected()) {
+    DLOG("MQTT Disconnected, not sending status\n");
     return;
   }
-  int16_t distance = values[0] * 256 + values[1];
-  uint8_t chargingState = values[2];
-  uint16_t voltage = values[3] * 256 + values[4];
-  int16_t current = values[5] * 256 + values[6];
-  uint16_t charge = values[7] * 256 + values[8];
-  uint16_t capacity = values[9] * 256 + values[10];
-
-  DLOG("Got sensor values Distance:%dmm ChargingState:%d Voltage:%dmV Current:%dmA Charge:%dmAh Capacity:%dmAh\n", distance, chargingState, voltage, current, charge, capacity);
-
-  cleaning = false;
-  docked = false;
-  if (current < -400) {
-    cleaning = true;
-  } else if (current > -50) {
-    docked = true;
-  }
-
+  DLOG("Reporting packet Distance:%dmm ChargingState:%d Voltage:%dmV Current:%dmA Charge:%dmAh Capacity:%dmAh\n", roombaState.distance, roombaState.chargingState, roombaState.voltage, roombaState.current, roombaState.charge, roombaState.capacity);
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& root = jsonBuffer.createObject();
-  root["battery_level"] = (charge * 100)/capacity;
-  root["cleaning"] = cleaning;
-  root["docked"] = docked;
-  root["charging"] = chargingState == Roomba::ChargeStateReconditioningCharging
-  || chargingState == Roomba::ChargeStateFullCharging
-  || chargingState == Roomba::ChargeStateTrickleCharging;
-  root["voltage"] = voltage;
-  root["current"] = current;
-  root["charge"] = charge;
+  root["battery_level"] = (roombaState.charge * 100)/roombaState.capacity;
+  root["cleaning"] = roombaState.cleaning;
+  root["docked"] = roombaState.docked;
+  root["charging"] = roombaState.chargingState == Roomba::ChargeStateReconditioningCharging
+  || roombaState.chargingState == Roomba::ChargeStateFullCharging
+  || roombaState.chargingState == Roomba::ChargeStateTrickleCharging;
+  root["voltage"] = roombaState.voltage;
+  root["current"] = roombaState.current;
+  root["charge"] = roombaState.charge;
   String jsonStr;
   root.printTo(jsonStr);
   mqttClient.publish(statusTopic, jsonStr.c_str());
@@ -291,32 +393,54 @@ void sendStatus() {
 
 int lastStateMsgTime = 0;
 int lastWakeupTime = 0;
+int lastConnectTime = 0;
 
 void loop() {
-  long now = millis();
-  // If MQTT client can't connect to broker, then reconnect
-  if (!mqttClient.connected()) {
-    reconnect();
-  } else {
-    if (now - lastWakeupTime > 50000) {
-      lastWakeupTime = now;
-      if (!cleaning) {
-        if (docked) {
-          wakeOnDock();
-        } else {
-          wakeOffDock();
-        }
-      }
-    }
-    if (now - lastStateMsgTime > 10000) {
-      lastStateMsgTime = now;
-      sendStatus();
-      sleepIfNecessary();
-    }
-  }
-
+  // Important callbacks that _must_ happen every cycle
   ArduinoOTA.handle();
   yield();
   Debug.handle();
+
+  // Skip all other logic if we're running an OTA update
+  if (OTAStarted) {
+    return;
+  }
+
+  long now = millis();
+  // If MQTT client can't connect to broker, then reconnect
+  if (!mqttClient.connected() && (now - lastConnectTime) > 5000) {
+    DLOG("Reconnecting MQTT\n");
+    lastConnectTime = now;
+    reconnect();
+  }
+  // Wakeup the roomba at fixed intervals
+  if (now - lastWakeupTime > 50000) {
+    lastWakeupTime = now;
+    if (!roombaState.cleaning) {
+      if (roombaState.docked) {
+        wakeOnDock();
+      } else {
+        // wakeOffDock();
+        wakeup();
+      }
+    } else {
+      wakeup();
+    }
+  }
+  // Report the status over mqtt at fixed intervals
+  if (now - lastStateMsgTime > 10000) {
+    lastStateMsgTime = now;
+    if (now - roombaState.timestamp > 30000 || roombaState.sent) {
+      DLOG("Roomba state already sent (%.1fs old)\n", (now - roombaState.timestamp)/1000.0);
+      DLOG("Resume streaming\n");
+      roomba.streamCommand(Roomba::StreamCommandResume);
+    } else {
+      sendStatus();
+      roombaState.sent = true;
+    }
+    sleepIfNecessary();
+  }
+
+  readSensorPacket();
   mqttClient.loop();
 }

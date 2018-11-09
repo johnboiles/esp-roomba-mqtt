@@ -273,7 +273,7 @@ bool Roomba::getSensorsList(uint8_t* packetIDs, uint8_t numPacketIDs, uint8_t* d
 }
 
 // Simple state machine to read sensor data and discard everything else
-bool Roomba::pollSensors(uint8_t* dest, uint8_t len)
+bool Roomba::pollSensors(uint8_t* dest, uint8_t destSize, uint8_t *packetLen)
 {
     while (_serial->available())
     {
@@ -293,7 +293,7 @@ bool Roomba::pollSensors(uint8_t* dest, uint8_t len)
 
 	    case PollStateWaitBytes:
 		_pollChecksum += ch;
-		if (_pollCount < len)
+		if (_pollCount < destSize)
 		    dest[_pollCount] = ch;
 		if (_pollCount++ >= _pollSize)
 		    _pollState = PollStateWaitChecksum;
@@ -302,6 +302,7 @@ bool Roomba::pollSensors(uint8_t* dest, uint8_t len)
 	    case PollStateWaitChecksum:
 		_pollChecksum += ch;
 		_pollState = PollStateIdle;
+		*packetLen = _pollSize;
 		return (_pollChecksum == 0);
 		break;
 	}
