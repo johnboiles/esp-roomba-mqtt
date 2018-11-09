@@ -302,7 +302,7 @@ void readSensorPacket() {
     bool parsed = parseRoombaStateFromStreamPacket(roombaPacket, packetLength, &rs);
     if (parsed) {
       roombaState = rs;
-      VLOG("Got Packet! Distance:%dmm ChargingState:%d Voltage:%dmV Current:%dmA Charge:%dmAh Capacity:%dmAh\n", roombaState.distance, roombaState.chargingState, roombaState.voltage, roombaState.current, roombaState.charge, roombaState.capacity);
+      VLOG("Got Packet of len=%d! Distance:%dmm ChargingState:%d Voltage:%dmV Current:%dmA Charge:%dmAh Capacity:%dmAh\n", packetLength, roombaState.distance, roombaState.chargingState, roombaState.voltage, roombaState.current, roombaState.charge, roombaState.capacity);
       roombaState.cleaning = false;
       roombaState.docked = false;
       if (roombaState.current < -400) {
@@ -430,7 +430,12 @@ void loop() {
   // Report the status over mqtt at fixed intervals
   if (now - lastStateMsgTime > 10000) {
     lastStateMsgTime = now;
-    if (now - roombaState.timestamp > 30000 || roombaState.sent) {
+    if (now - roombaState.timestamp > 120000) {
+      DLOG("Requesting sensor stream\n");
+      roomba.stream(sensors, sizeof(sensors));
+      delay(100);
+      roomba.streamCommand(Roomba::StreamCommandResume);
+    } else if (now - roombaState.timestamp > 30000 || roombaState.sent) {
       DLOG("Roomba state already sent (%.1fs old)\n", (now - roombaState.timestamp)/1000.0);
       DLOG("Resume streaming\n");
       roomba.streamCommand(Roomba::StreamCommandResume);
