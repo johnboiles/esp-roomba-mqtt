@@ -316,6 +316,64 @@ void readSensorPacket() {
   }
 }
 
+int packetIndex;
+int packetNumberOfBytes;
+
+void readSensorPacket2() {
+  char in;
+  if (Serial.available()) {
+	  in = Serial.read();
+    VLOG("%d ", in);
+  } else {
+    return;
+  }
+
+  // Wait for the start byte
+  if (packetIndex == 0 && in != 19) {
+    return;
+  }
+
+  roombaPacket[packetIndex] = in;
+  packetIndex++;
+
+  if (packetIndex == 2) {
+    // Record packet length
+    packetNumberOfBytes = in;
+  } else if (packetIndex >= packetNumberOfBytes + 3) {
+    // Calculate checksum
+    uint8_t checksum = 0;
+    VLOG("\nSERIAL DATA: ");
+    for (int i = 0; i < packetIndex; i++) {
+      checksum += roombaPacket[i];
+      VLOG("%d ", roombaPacket[i]);
+    }
+    VLOG("\n");
+    if (checksum == 0) {
+      VLOG("Got packet with valid checksum\n");
+      uint8_t *packet = &(roombaPacket[2]);
+      RoombaState rs;
+      bool parsed = parseRoombaStateFromStreamPacket(packet, roombaPacket[1], &rs);
+      if (parsed) {
+        roombaState = rs;
+        VLOG("Got Packet! Distance:%dmm ChargingState:%d Voltage:%dmV Current:%dmA Charge:%dmAh Capacity:%dmAh\n", roombaState.distance, roombaState.chargingState, roombaState.voltage, roombaState.current, roombaState.charge, roombaState.capacity);
+        roombaState.cleaning = false;
+        roombaState.docked = false;
+        if (roombaState.current < -400) {
+          roombaState.cleaning = true;
+        } else if (roombaState.current > -50) {
+          roombaState.docked = true;
+        }
+      } else {
+        VLOG("Failed to parse packet\n");
+      }
+    } else {
+      VLOG("Got packet without valid checksum\n");
+    }
+    packetIndex = 0;
+  }
+}
+
+
 bool OTAStarted;
 
 void onOTAStart() {
