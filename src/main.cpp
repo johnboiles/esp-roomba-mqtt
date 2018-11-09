@@ -43,7 +43,7 @@ typedef struct {
   bool sent;
 } RoombaState;
 
-RoombaState roombaState;
+RoombaState roombaState = {};
 
 // Roomba sensor packet
 uint8_t roombaPacket[100];
@@ -319,7 +319,7 @@ void readSensorPacket() {
   uint8_t packetLength;
   bool received = roomba.pollSensors(roombaPacket, sizeof(roombaPacket), &packetLength);
   if (received) {
-    RoombaState rs;
+    RoombaState rs = {};
     bool parsed = parseRoombaStateFromStreamPacket(roombaPacket, packetLength, &rs);
     verboseLogPacket(roombaPacket, packetLength);
     if (parsed) {
