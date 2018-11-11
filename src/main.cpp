@@ -31,8 +31,9 @@ typedef struct {
   uint8_t chargingState;
   uint16_t voltage;
   int16_t current;
-  // Supposedly unsigned, but I've seen it get to crazy values
-  uint16_t charge;
+  // Supposedly unsigned according to the OI docs, but I've seen it
+  // underflow to ~65000mAh, so I think signed will work better.
+  int16_t charge;
   uint16_t capacity;
 
   // Derived state
