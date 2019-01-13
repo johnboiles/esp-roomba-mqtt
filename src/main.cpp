@@ -306,6 +306,7 @@ bool parseRoombaStateFromStreamPacket(uint8_t *packet, int length, RoombaState *
         break;
     }
   }
+  return true;
 }
 
 void verboseLogPacket(uint8_t *packet, uint8_t length) {
