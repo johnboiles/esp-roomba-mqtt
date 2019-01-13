@@ -306,6 +306,7 @@ bool parseRoombaStateFromStreamPacket(uint8_t *packet, int length, RoombaState *
         break;
     }
   }
+  return false;
 }
 
 void verboseLogPacket(uint8_t *packet, uint8_t length) {
@@ -357,6 +358,7 @@ void setup() {
   String hostname(HOSTNAME);
   WiFi.hostname(hostname);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.mode(WIFI_STA);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
