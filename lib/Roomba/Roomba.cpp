@@ -99,6 +99,11 @@ void Roomba::cover()
   _serial->write(135);
 }
 
+void Roomba::maxClean()
+{
+  _serial->write(136);
+}
+
 void Roomba::coverAndDock()
 {
   _serial->write(143);

@@ -3,6 +3,9 @@
 #define HOSTNAME "roomba" // e.g. roomba.local
 #define BRC_PIN 14
 #define ROOMBA_650_SLEEP_FIX 1
+#ifndef ROOMBA_650_SLEEP_FIX
+#define ROOMBA_500 1
+#endif
 
 #define ADC_VOLTAGE_DIVIDER 44.551316985
 //#define ENABLE_ADC_SLEEP

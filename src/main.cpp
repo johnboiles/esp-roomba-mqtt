@@ -67,16 +67,40 @@ const PROGMEM char *commandTopic = MQTT_COMMAND_TOPIC;
 const PROGMEM char *statusTopic = MQTT_STATE_TOPIC;
 
 void wakeup() {
+#ifndef ROOMBA_500
   DLOG("Wakeup Roomba\n");
   pinMode(BRC_PIN,OUTPUT);
   digitalWrite(BRC_PIN,LOW);
   delay(200);
   pinMode(BRC_PIN,INPUT);
   delay(200);
-  Serial.write(128); // Start
+  roomba.start();
+#else
+  // test connection to roomba
+  uint8_t packetLength;
+  bool result = roomba.pollSensors(roombaPacket, sizeof(roombaPacket), &packetLength);
+  if (result)  {
+    DLOG("No need to wakeup Roomba\n");
+  } else {
+    DLOG("Wakeup Roomba\n");
+    pinMode(BRC_PIN, OUTPUT);
+    delay(50);
+    digitalWrite(BRC_PIN, LOW);
+    delay(50);
+    digitalWrite(BRC_PIN, HIGH);
+    delay(200);
+    digitalWrite(BRC_PIN, LOW);
+    delay(50);
+    pinMode(BRC_PIN, INPUT);
+    delay(50);
+    roomba.start();
+    delay(200);
+  }
+  #endif
 }
 
 void wakeOnDock() {
+#ifndef ROOMBA_500
   DLOG("Wakeup Roomba on dock\n");
   wakeup();
 #ifdef ROOMBA_650_SLEEP_FIX
@@ -87,6 +111,7 @@ void wakeOnDock() {
   delay(150);
   Serial.write(143); // Dock
 #endif
+#endif
 }
 
 void wakeOffDock() {
@@ -94,6 +119,19 @@ void wakeOffDock() {
   Serial.write(131); // Safe mode
   delay(300);
   Serial.write(130); // Passive mode
+}
+
+// stop current action
+void roombaStop() {
+  if (roombaState.cleaning) {
+    DLOG("Stopping\n");
+    roomba.start();
+    delay(50);
+    roomba.safeMode();
+    delay(50);
+    roomba.start();
+    delay(50);
+  }
 }
 
 bool performCommand(const char *cmdchar) {
@@ -105,6 +143,7 @@ bool performCommand(const char *cmdchar) {
   // MQTT protocol commands
   if (cmd == "turn_on") {
     DLOG("Turning on\n");
+    roombaStop();
     roomba.cover();
     roombaState.cleaning = true;
   } else if (cmd == "turn_off") {
@@ -114,22 +153,35 @@ bool performCommand(const char *cmdchar) {
   } else if (cmd == "toggle" || cmd == "start_pause") {
     DLOG("Toggling\n");
     roomba.cover();
+    roombaState.cleaning = !roombaState.cleaning;
   } else if (cmd == "stop") {
+#ifdef ROOMBA_500
+    roombaStop();
+    roombaState.cleaning = false;
+#else
     if (roombaState.cleaning) {
       DLOG("Stopping\n");
       roomba.cover();
     } else {
       DLOG("Not cleaning, can't stop\n");
     }
+#endif
   } else if (cmd == "clean_spot") {
     DLOG("Cleaning Spot\n");
     roombaState.cleaning = true;
+    roombaStop();
     roomba.spot();
+  } else if (cmd == "max_clean") {
+    DLOG("Max Clean\n");
+    roombaStop();
+    roombaState.cleaning = true;
+    roomba.maxClean();
   } else if (cmd == "locate") {
     DLOG("Locating\n");
     // TODO
   } else if (cmd == "return_to_base") {
     DLOG("Returning to Base\n");
+    roombaStop();
     roombaState.cleaning = true;
     roomba.dock();
   } else {
@@ -153,6 +205,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   }
 }
 
+#ifdef ENABLE_ADC_SLEEP
 float readADC(int samples) {
   // Basic code to read from the ADC
   int adc = 0;
@@ -165,6 +218,20 @@ float readADC(int samples) {
   VLOG("ADC for %d is %.1fmV with %d samples\n", adc, mV, samples);
   return mV;
 }
+#endif
+
+void moveBack() {
+  roomba.fullMode();
+  delay(500);
+  DLOG("Switched to safeMode\n");
+  roomba.drive(-300, 0);
+  DLOG("Start back movement\n");
+  delay(5000);
+  roomba.drive(0, 0);
+  delay(100);
+  DLOG("Stop\n");
+  roomba.start(); // switch to Passive mode
+}
 
 void debugCallback() {
   String cmd = Debug.getLastCommand();
@@ -174,6 +241,9 @@ void debugCallback() {
   } else if (cmd == "quit") {
     DLOG("Stopping Roomba\n");
     Serial.write(173);
+  } else if ( cmd == "back") {
+    DLOG("Move Roomba backward\n");
+    moveBack();
   } else if (cmd == "rreset") {
     DLOG("Resetting Roomba\n");
     roomba.reset();
@@ -206,8 +276,10 @@ void debugCallback() {
     DLOG("Toggle BRC pin\n");
     wakeup();
   } else if (cmd == "readadc") {
+#ifdef ENABLE_ADC_SLEEP
     float adc = readADC(10);
     DLOG("ADC voltage is %.1fmV\n", adc);
+#endif
   } else if (cmd == "streamresume") {
     DLOG("Resume streaming\n");
     roomba.streamCommand(Roomba::StreamCommandResume);
@@ -349,7 +421,7 @@ void onOTAStart() {
 
 void setup() {
   // High-impedence on the BRC_PIN
-  pinMode(BRC_PIN,INPUT);
+  pinMode(BRC_PIN, INPUT);
 
   // Sleep immediately if ENABLE_ADC_SLEEP and the battery is low
   sleepIfNecessary();
@@ -376,7 +448,7 @@ void setup() {
   Debug.setCallBackProjectCmds(debugCallback);
   Debug.setSerialEnabled(false);
   #endif
-
+  
   roomba.start();
   delay(100);
 
@@ -407,7 +479,7 @@ void sendStatus() {
   DLOG("Reporting packet Distance:%dmm ChargingState:%d Voltage:%dmV Current:%dmA Charge:%dmAh Capacity:%dmAh\n", roombaState.distance, roombaState.chargingState, roombaState.voltage, roombaState.current, roombaState.charge, roombaState.capacity);
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& root = jsonBuffer.createObject();
-  root["battery_level"] = (roombaState.charge * 100)/roombaState.capacity;
+  root["battery_level"] = (roombaState.charge * 100)/ (roombaState.capacity != 0 ? roombaState.capacity : 2696);
   root["cleaning"] = roombaState.cleaning;
   root["docked"] = roombaState.docked;
   root["charging"] = roombaState.chargingState == Roomba::ChargeStateReconditioningCharging
@@ -421,9 +493,15 @@ void sendStatus() {
   mqttClient.publish(statusTopic, jsonStr.c_str());
 }
 
-int lastStateMsgTime = 0;
-int lastWakeupTime = 0;
-int lastConnectTime = 0;
+long lastStateMsgTime = 0;
+long lastWakeupTime = 0;
+long lastConnectTime = 0;
+#ifdef ROOMBA_500
+  // Wake up every 5 hours. Just to update battery level.
+  long wakeupInterval = 18e7;
+#else
+  long wakeupInterval = 50000;
+#endif
 
 void loop() {
   // Important callbacks that _must_ happen every cycle
@@ -444,7 +522,7 @@ void loop() {
     reconnect();
   }
   // Wakeup the roomba at fixed intervals
-  if (now - lastWakeupTime > 50000) {
+  if (now - lastWakeupTime > wakeupInterval) {
     lastWakeupTime = now;
     if (!roombaState.cleaning) {
       if (roombaState.docked) {
