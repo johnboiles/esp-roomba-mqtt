@@ -69,10 +69,10 @@ const PROGMEM char *statusTopic = MQTT_STATE_TOPIC;
 void wakeup() {
 #ifndef ROOMBA_500
   DLOG("Wakeup Roomba\n");
-  pinMode(BRC_PIN,OUTPUT);
-  digitalWrite(BRC_PIN,LOW);
+  pinMode(BRC_PIN, OUTPUT);
+  digitalWrite(BRC_PIN, LOW);
   delay(200);
-  pinMode(BRC_PIN,INPUT);
+  pinMode(BRC_PIN, INPUT);
   delay(200);
   roomba.start();
 #else
@@ -215,6 +215,20 @@ float readADC(int samples) {
 }
 #endif
 
+void setDateTime() {
+    configTime(TIMEZONE * 3600, 0, "pool.ntp.org", "time.nist.gov");
+    DLOG("Waiting for time\n");
+    delay(4000);
+    time_t now = time(nullptr);
+    struct tm * timeinfo;
+    time(&now);
+    timeinfo = localtime(&now);  
+    Serial.write(168);
+    Serial.write(timeinfo->tm_wday);
+    Serial.write(timeinfo->tm_hour);
+    Serial.write(timeinfo->tm_min);
+}
+
 void debugCallback() {
   String cmd = Debug.getLastCommand();
 
@@ -271,6 +285,8 @@ void debugCallback() {
   } else if (cmd == "streamreset") {
     DLOG("Resetting stream\n");
     roomba.stream({}, 0);
+  } else if (cmd == "time") {
+    setDateTime();
   } else {
     DLOG("Unknown command %s\n", cmd.c_str());
   }
@@ -437,6 +453,12 @@ void setup() {
 
   // Request sensor stream
   roomba.stream(sensors, sizeof(sensors));
+
+#ifdef SET_DATETIME
+  wakeup();
+  // set time
+  setDateTime();
+#endif
 }
 
 void reconnect() {
