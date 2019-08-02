@@ -433,6 +433,10 @@ public:
     /// Changes mode to Passive
     void cover();
 
+    /// Starts the Max cleaning mode, which will clean until the battery is dead
+    /// Changes mode to Passive
+    void maxClean();
+
     /// Starts the Cover and Dock demo
     /// Changes mode to Passive
     void coverAndDock();
