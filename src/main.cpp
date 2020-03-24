@@ -236,8 +236,7 @@ void sleepIfNecessary() {
     // Fire off a quick message with our most recent state, if MQTT is connected
     DLOG("Battery voltage is low (%.1fV). Sleeping for 10 minutes\n", mV / 1000);
     if (mqttClient.connected()) {
-      StaticJsonBuffer<200> jsonBuffer;
-      JsonObject root = jsonBuffer.createObject();
+      StaticJsonDocument<200> root;
       root["battery_level"] = 0;
       root["cleaning"] = false;
       root["docked"] = false;
@@ -245,7 +244,7 @@ void sleepIfNecessary() {
       root["voltage"] = mV / 1000;
       root["charge"] = 0;
       String jsonStr;
-      root.printTo(jsonStr);
+      serializeJson(root, jsonStr);
       mqttClient.publish(statusTopic, jsonStr.c_str(), true);
     }
     delay(200);
