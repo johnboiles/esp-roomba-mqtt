@@ -145,7 +145,8 @@ char* getEntityID() {
   sprintf(MACc, "%02X%02X%02X%02X%02X%02X", MAC[0], MAC[1], MAC[2], MAC[3], MAC[4], MAC[5]);
   char entityID[50];
   sprintf(entityID, "%s%s", MQTT_IDPREFIX, MACc);
-  return entityID;
+  // avoid confusions with lower/upper case differences in IDs
+  return strlwr(entityID);
 }
 
 char* getMQTTTopic(char* topic) {
@@ -426,9 +427,10 @@ void sendConfig() {
   char baseTopic[200];
   sprintf(baseTopic, "%s%s", MQTT_TOPIC_BASE, getEntityID());
   root["~"] = baseTopic;
-  root["stat_t"] = "~/state";
-  root["cmd_t"] = "~/command";
-  root["send_cmd_t"] = "~/command";
+  root["stat_t"] = String("~/") + MQTT_STATE_TOPIC;
+  root["cmd_t"] = String("~/") + MQTT_COMMAND_TOPIC;
+  root["send_cmd_t"] = String("~/") + MQTT_COMMAND_TOPIC;
+  root["json_attr_t"] = String("~/") + MQTT_STATE_TOPIC;
   root["sup_feat"][0] = "start";
   root["sup_feat"][1] = "stop";
   root["sup_feat"][2] = "pause";
@@ -474,6 +476,7 @@ void sendStatus() {
 int lastStateMsgTime = 0;
 int lastWakeupTime = 0;
 int lastConnectTime = 0;
+int configLoop = 0;
 
 void loop() {
   // Important callbacks that _must_ happen every cycle
@@ -488,11 +491,21 @@ void loop() {
 
   long now = millis();
   // If MQTT client can't connect to broker, then reconnect
-  if (!mqttClient.connected() && (now - lastConnectTime) > 5000) {
-    DLOG("Reconnecting MQTT\n");
+  if ((now - lastConnectTime) > 5000) {
     lastConnectTime = now;
-    reconnect();
-    sendConfig();
+    if (!mqttClient.connected()) {
+      DLOG("Reconnecting MQTT\n");
+      reconnect();
+      sendConfig();
+    } else {
+      // resend config every now and then to reconfigure entity e.g. in case homeassistant has been restarted
+      if (configLoop == 19) {
+        sendConfig();
+        configLoop = 0;
+      } else {
+        configLoop++;
+      }
+    }
   }
   // Wakeup the roomba at fixed intervals
   if (now - lastWakeupTime > 50000) {
